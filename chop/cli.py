@@ -30,6 +30,24 @@ from chop.pipeline import (
 )
 
 
+def require_pipeline_input(command: str) -> PipelineState:
+    """Read pipeline state from stdin, raising if not available.
+
+    Args:
+        command: Command name for error message.
+
+    Returns:
+        PipelineState from piped input.
+
+    Raises:
+        ValueError: If no piped input is available.
+    """
+    state = read_pipeline_input()
+    if not state:
+        raise ValueError(f"{command} requires piped input (use: chop load img.png | chop {command} ...)")
+    return state
+
+
 def cmd_load(args: argparse.Namespace) -> PipelineState:
     """Load image from file, URL, or stdin.
 
@@ -55,49 +73,35 @@ def cmd_load(args: argparse.Namespace) -> PipelineState:
 
 def cmd_resize(args: argparse.Namespace) -> PipelineState:
     """Resize image (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("resize requires piped input (use: chop load img.png | chop resize ...)")
-
+    state = require_pipeline_input("resize")
     state.add_op("resize", args.size)
     return state
 
 
 def cmd_crop(args: argparse.Namespace) -> PipelineState:
     """Crop image (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("crop requires piped input")
-
+    state = require_pipeline_input("crop")
     state.add_op("crop", args.x, args.y, args.width, args.height)
     return state
 
 
 def cmd_rotate(args: argparse.Namespace) -> PipelineState:
     """Rotate image (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("rotate requires piped input")
-
+    state = require_pipeline_input("rotate")
     state.add_op("rotate", args.degrees)
     return state
 
 
 def cmd_flip(args: argparse.Namespace) -> PipelineState:
     """Flip image (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("flip requires piped input")
-
+    state = require_pipeline_input("flip")
     state.add_op("flip", args.direction)
     return state
 
 
 def cmd_pad(args: argparse.Namespace) -> PipelineState:
     """Add padding around image (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("pad requires piped input")
+    state = require_pipeline_input("pad")
 
     # Build padding args based on how many values provided
     padding = args.padding
@@ -114,80 +118,56 @@ def cmd_pad(args: argparse.Namespace) -> PipelineState:
 
 def cmd_border(args: argparse.Namespace) -> PipelineState:
     """Add colored border (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("border requires piped input")
-
+    state = require_pipeline_input("border")
     state.add_op("border", args.width, color=args.color)
     return state
 
 
 def cmd_fit(args: argparse.Namespace) -> PipelineState:
     """Fit image within bounds (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("fit requires piped input")
-
+    state = require_pipeline_input("fit")
     state.add_op("fit", args.size)
     return state
 
 
 def cmd_fill(args: argparse.Namespace) -> PipelineState:
     """Fill bounds and crop excess (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("fill requires piped input")
-
+    state = require_pipeline_input("fill")
     state.add_op("fill", args.size)
     return state
 
 
 def cmd_hstack(args: argparse.Namespace) -> PipelineState:
     """Stack images horizontally (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("hstack requires piped input (use: chop load img.png | chop hstack other.png)")
-
+    state = require_pipeline_input("hstack")
     state.add_op("hstack", args.path, align=args.align)
     return state
 
 
 def cmd_vstack(args: argparse.Namespace) -> PipelineState:
     """Stack images vertically (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("vstack requires piped input (use: chop load img.png | chop vstack other.png)")
-
+    state = require_pipeline_input("vstack")
     state.add_op("vstack", args.path, align=args.align)
     return state
 
 
 def cmd_overlay(args: argparse.Namespace) -> PipelineState:
     """Overlay an image on top (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("overlay requires piped input")
-
+    state = require_pipeline_input("overlay")
     state.add_op("overlay", args.path, args.x, args.y, opacity=args.opacity, paste=args.paste)
     return state
 
 
 def cmd_tile(args: argparse.Namespace) -> PipelineState:
     """Tile image NxM times (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("tile requires piped input")
-
+    state = require_pipeline_input("tile")
     state.add_op("tile", cols=args.cols, rows=args.rows)
     return state
 
 
 def cmd_grid(args: argparse.Namespace) -> PipelineState:
     """Arrange images in a grid (lazy - just appends operation)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("grid requires piped input")
-
+    state = require_pipeline_input("grid")
     state.add_op("grid", args.paths, cols=args.cols)
     return state
 
@@ -200,11 +180,7 @@ def cmd_apply(args: argparse.Namespace) -> PipelineState:
     """
     from chop.dsl import load_program, parse_program
 
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError(
-            "apply requires piped input (use: chop load img.png | chop apply ...)"
-        )
+    state = require_pipeline_input("apply")
 
     program_text = load_program(args.program)
     ops = parse_program(program_text)
@@ -217,9 +193,7 @@ def cmd_apply(args: argparse.Namespace) -> PipelineState:
 
 def cmd_save(args: argparse.Namespace) -> None:
     """Save image to file (materializes the pipeline)."""
-    state = read_pipeline_input()
-    if not state:
-        raise ValueError("save requires piped input (use: chop load img.png | chop save out.png)")
+    state = require_pipeline_input("save")
 
     # Materialize the pipeline
     image = state.materialize()

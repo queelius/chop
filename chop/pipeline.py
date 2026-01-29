@@ -10,13 +10,9 @@ import io
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import numpy as np
 from PIL import Image
-
-if TYPE_CHECKING:
-    from numpy.typing import NDArray
 
 
 @dataclass

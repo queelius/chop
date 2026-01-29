@@ -5,14 +5,9 @@ Each operation takes a PIL Image and returns a modified PIL Image.
 
 from __future__ import annotations
 
-import re
-from typing import TYPE_CHECKING
+from typing import Callable
 
-import numpy as np
 from PIL import Image, ImageColor
-
-if TYPE_CHECKING:
-    pass
 
 
 def parse_size(size_str: str, current_size: tuple[int, int]) -> tuple[int, int]:
@@ -538,7 +533,7 @@ def op_grid(
 # Map operation names to their functions
 # Note: Composition operations (hstack, vstack, overlay, grid) require
 # additional images to be loaded, so they're handled specially in apply_operation()
-OPERATIONS: dict[str, callable] = {
+OPERATIONS: dict[str, Callable[..., Image.Image]] = {
     # Geometric
     "resize": op_resize,
     "crop": op_crop,
