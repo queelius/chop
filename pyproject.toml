@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Unix-philosophy image manipulation CLI with JSON piping"
 readme = "README.md"
 requires-python = ">=3.10"

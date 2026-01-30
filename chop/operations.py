@@ -530,9 +530,7 @@ def op_grid(
 # =============================================================================
 
 
-# Map operation names to their functions
-# Note: Composition operations (hstack, vstack, overlay, grid) require
-# additional images to be loaded, so they're handled specially in apply_operation()
+# Single-image transform operations
 OPERATIONS: dict[str, Callable[..., Image.Image]] = {
     # Geometric
     "resize": op_resize,
@@ -544,19 +542,26 @@ OPERATIONS: dict[str, Callable[..., Image.Image]] = {
     # Padding/border
     "pad": op_pad,
     "border": op_border,
-    # Composition
+    # Single-image composition
     "tile": op_tile,
 }
+
+# Multi-image composition operations — dispatched by execute_composition()
+# in pipeline.py rather than through apply_operation().
+COMPOSITION_OPS: set[str] = {"hstack", "vstack", "overlay", "grid"}
 
 
 def apply_operation(
     image: Image.Image, op_name: str, *args, **kwargs
 ) -> Image.Image:
-    """Apply a named operation to an image.
+    """Apply a named single-image operation.
+
+    Composition operations (hstack, vstack, overlay, grid) are handled
+    by execute_composition() in pipeline.py, not here.
 
     Args:
         image: Input PIL Image
-        op_name: Operation name (e.g., "resize", "dither")
+        op_name: Operation name (e.g., "resize", "flip")
         *args: Positional arguments for the operation
         **kwargs: Keyword arguments for the operation
 
@@ -566,44 +571,13 @@ def apply_operation(
     Raises:
         ValueError: If operation name is unknown
     """
-    # Handle composition operations that need to load additional images
-    if op_name == "hstack":
-        from chop.pipeline import load_image
-        other = load_image(args[0])
-        align = kwargs.get("align", "center")
-        return op_hstack(image, other, align=align)
-
-    if op_name == "vstack":
-        from chop.pipeline import load_image
-        other = load_image(args[0])
-        align = kwargs.get("align", "center")
-        return op_vstack(image, other, align=align)
-
-    if op_name == "overlay":
-        from chop.pipeline import load_image
-        overlay_img = load_image(args[0])
-        x = args[1] if len(args) > 1 else kwargs.get("x", 0)
-        y = args[2] if len(args) > 2 else kwargs.get("y", 0)
-        opacity = kwargs.get("opacity", 1.0)
-        paste = kwargs.get("paste", False)
-        return op_overlay(image, overlay_img, x=x, y=y, opacity=opacity, paste=paste)
-
-    if op_name == "grid":
-        from chop.pipeline import load_image
-        paths = args[0] if args else kwargs.get("paths", [])
-        others = [load_image(p) for p in paths]
-        cols = kwargs.get("cols", 2)
-        return op_grid(image, others, cols=cols)
-
     # Handle crop specially to parse arguments
     if op_name == "crop":
         x, y, w, h = args[0], args[1], args[2], args[3]
-        # Parse if string percentages
         if isinstance(x, str) or isinstance(y, str):
             x, y, w, h = parse_crop([str(x), str(y), str(w), str(h)], image.size)
         return op_crop(image, x, y, w, h)
 
-    # Standard operations
     if op_name not in OPERATIONS:
         raise ValueError(f"Unknown operation: {op_name}")
 
