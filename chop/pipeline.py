@@ -84,8 +84,8 @@ class PipelineState:
             )
 
     def has_load(self) -> bool:
-        """Check if any op is a load."""
-        return any(name == "load" for name, _, _ in self.ops)
+        """Check if any op is a source (load or canvas)."""
+        return any(name in ("load", "canvas") for name, _, _ in self.ops)
 
     def materialize(self) -> Image.Image:
         """Execute the pipeline and return the cursor image.
@@ -118,6 +118,21 @@ class PipelineState:
                     label = "img" if auto_counter == 1 else f"img{auto_counter}"
                     auto_counter += 1
                 context[label] = load_image(args[0])
+                cursor = label
+
+            elif op_name == "canvas":
+                from chop.operations import _parse_color
+
+                label = kw.pop("as", None)
+                if label is None:
+                    label = "img" if auto_counter == 1 else f"img{auto_counter}"
+                    auto_counter += 1
+                size_str = args[0]
+                parts = size_str.lower().split("x")
+                w, h = int(parts[0]), int(parts[1])
+                color = kw.pop("color", "transparent")
+                fill = _parse_color(color)
+                context[label] = Image.new("RGBA", (w, h), fill)
                 cursor = label
 
             elif op_name == "select":
@@ -202,16 +217,20 @@ def execute_composition(
 
     if op_name == "hstack":
         align = kwargs.get("align", "center")
+        gap = kwargs.get("gap", 0)
+        gap_color = kwargs.get("gap_color", "transparent")
         result = images[0]
         for img in images[1:]:
-            result = op_hstack(result, img, align=align)
+            result = op_hstack(result, img, align=align, gap=gap, gap_color=gap_color)
         return result
 
     if op_name == "vstack":
         align = kwargs.get("align", "center")
+        gap = kwargs.get("gap", 0)
+        gap_color = kwargs.get("gap_color", "transparent")
         result = images[0]
         for img in images[1:]:
-            result = op_vstack(result, img, align=align)
+            result = op_vstack(result, img, align=align, gap=gap, gap_color=gap_color)
         return result
 
     if op_name == "overlay":
@@ -227,7 +246,9 @@ def execute_composition(
 
     if op_name == "grid":
         cols = kwargs.get("cols", 2)
-        return op_grid(images[0], images[1:], cols=cols)
+        gap = kwargs.get("gap", 0)
+        gap_color = kwargs.get("gap_color", "transparent")
+        return op_grid(images[0], images[1:], cols=cols, gap=gap, gap_color=gap_color)
 
     raise ValueError(f"Unknown composition operation: {op_name}")
 

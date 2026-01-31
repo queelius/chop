@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chop"
-version = "0.3.0"
+version = "0.5.0"
 description = "Unix-philosophy image manipulation CLI with JSON piping"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "dapple developers"}
+    {name = "Alexander Towell", email = "queelius@gmail.com"}
 ]
 keywords = ["terminal", "image", "manipulation", "pipeline", "unix", "visualization"]
 classifiers = [

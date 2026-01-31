@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PIL import Image, ImageColor
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 
 def parse_size(size_str: str, current_size: tuple[int, int]) -> tuple[int, int]:
@@ -249,6 +249,270 @@ def op_border(
 
 
 # =============================================================================
+# Color and pixel operations
+# =============================================================================
+
+
+def op_brightness(image: Image.Image, factor: float) -> Image.Image:
+    """Adjust image brightness.
+
+    Args:
+        image: Input image
+        factor: Enhancement factor (0.0=black, 1.0=original, 2.0=double)
+
+    Returns:
+        Brightness-adjusted image
+    """
+    return ImageEnhance.Brightness(image).enhance(factor)
+
+
+def op_contrast(image: Image.Image, factor: float) -> Image.Image:
+    """Adjust image contrast.
+
+    Args:
+        image: Input image
+        factor: Enhancement factor (0.0=grey, 1.0=original, 2.0=double)
+
+    Returns:
+        Contrast-adjusted image
+    """
+    return ImageEnhance.Contrast(image).enhance(factor)
+
+
+def op_saturation(image: Image.Image, factor: float) -> Image.Image:
+    """Adjust color saturation.
+
+    Args:
+        image: Input image
+        factor: Enhancement factor (0.0=grayscale, 1.0=original, 2.0=double)
+
+    Returns:
+        Saturation-adjusted image
+    """
+    return ImageEnhance.Color(image).enhance(factor)
+
+
+def op_sharpen(image: Image.Image, factor: float) -> Image.Image:
+    """Adjust image sharpness.
+
+    Args:
+        image: Input image
+        factor: Enhancement factor (0.0=blurred, 1.0=original, 2.0=sharpened)
+
+    Returns:
+        Sharpness-adjusted image
+    """
+    return ImageEnhance.Sharpness(image).enhance(factor)
+
+
+def op_blur(image: Image.Image, radius: float) -> Image.Image:
+    """Apply Gaussian blur.
+
+    Args:
+        image: Input image
+        radius: Blur radius in pixels
+
+    Returns:
+        Blurred image
+    """
+    return image.filter(ImageFilter.GaussianBlur(radius))
+
+
+def op_grayscale(image: Image.Image) -> Image.Image:
+    """Convert to grayscale, preserving alpha channel.
+
+    Args:
+        image: Input image
+
+    Returns:
+        Grayscale image in RGBA mode
+    """
+    if image.mode == "RGBA":
+        r, g, b, a = image.split()
+        gray = image.convert("L")
+        return Image.merge("RGBA", (gray, gray, gray, a))
+    return image.convert("L").convert("RGBA")
+
+
+def op_invert(image: Image.Image) -> Image.Image:
+    """Invert image colors, preserving alpha channel.
+
+    Args:
+        image: Input image
+
+    Returns:
+        Color-inverted image
+    """
+    if image.mode == "RGBA":
+        r, g, b, a = image.split()
+        return Image.merge(
+            "RGBA", (ImageOps.invert(r), ImageOps.invert(g), ImageOps.invert(b), a)
+        )
+    return ImageOps.invert(image)
+
+
+# =============================================================================
+# Trim, colorize, opacity, background operations
+# =============================================================================
+
+
+def op_trim(image: Image.Image, fuzz: int = 0) -> Image.Image:
+    """Auto-crop uniform borders from image.
+
+    For RGBA images: trims transparent edges by default.
+    For opaque images: auto-detects border color from top-left corner.
+
+    Args:
+        image: Input image
+        fuzz: Tolerance 0-255 for color matching (default 0 = exact)
+
+    Returns:
+        Trimmed image (or original if nothing to trim)
+    """
+    # Auto-detect background: sample top-left corner
+    corner = image.getpixel((0, 0))
+    if image.mode == "RGBA" and corner[3] == 0:
+        # Corner is transparent — use alpha channel directly
+        _, _, _, a = image.split()
+        diff = a
+    else:
+        # Corner is opaque — diff RGB against corner color, ignore alpha
+        rgb = image.convert("RGB")
+        corner_rgb = corner[:3] if len(corner) > 3 else corner
+        bg = Image.new("RGB", image.size, corner_rgb)
+        diff = ImageChops.difference(rgb, bg)
+
+    if fuzz > 0:
+        # Threshold: pixels with difference <= fuzz become black (0)
+        diff = diff.point(lambda p: 0 if p <= fuzz else p)
+
+    bbox = diff.getbbox()
+    if bbox is None:
+        return image  # Nothing to trim (or entirely uniform)
+    return image.crop(bbox)
+
+
+def op_colorize(image: Image.Image, color: str, strength: float = 1.0) -> Image.Image:
+    """Tint image with a color, preserving luminance.
+
+    Args:
+        image: Input image
+        color: Named color or hex string
+        strength: Blend factor 0.0 (none) to 1.0 (full tint), default 1.0
+
+    Returns:
+        Color-tinted image
+    """
+    rgba = image.convert("RGBA")
+    r, g, b, a = rgba.split()
+
+    # Compute luminance as grayscale
+    gray = image.convert("L")
+
+    # Parse target color
+    tint_rgb = ImageColor.getrgb(color)
+    if len(tint_rgb) == 4:
+        tint_rgb = tint_rgb[:3]
+
+    # Create tinted channels: scale tint color by luminance
+    tinted_r = gray.point(lambda p: int(p * tint_rgb[0] / 255))
+    tinted_g = gray.point(lambda p: int(p * tint_rgb[1] / 255))
+    tinted_b = gray.point(lambda p: int(p * tint_rgb[2] / 255))
+
+    tinted = Image.merge("RGBA", (tinted_r, tinted_g, tinted_b, a))
+
+    if strength >= 1.0:
+        return tinted
+    if strength <= 0.0:
+        return rgba
+
+    # Blend original with tinted
+    return Image.blend(rgba, tinted, strength)
+
+
+def op_opacity(image: Image.Image, factor: float) -> Image.Image:
+    """Set uniform opacity by scaling the alpha channel.
+
+    Args:
+        image: Input image
+        factor: Opacity factor 0.0 (transparent) to 1.0 (opaque)
+
+    Returns:
+        Image with adjusted alpha
+    """
+    rgba = image.convert("RGBA")
+    r, g, b, a = rgba.split()
+    a = a.point(lambda p: int(p * factor))
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+def op_background(image: Image.Image, color: str) -> Image.Image:
+    """Flatten transparency onto a solid color background.
+
+    Args:
+        image: Input image (typically with transparency)
+        color: Background color (name or hex)
+
+    Returns:
+        Fully opaque image (RGBA with A=255 everywhere)
+    """
+    fill_color = _parse_color(color)
+    canvas = Image.new("RGBA", image.size, fill_color)
+    rgba = image.convert("RGBA")
+    canvas = Image.alpha_composite(canvas, rgba)
+    return canvas
+
+
+def op_mask(
+    image: Image.Image, shape: str, radius: int = 0, invert: bool = False
+) -> Image.Image:
+    """Apply a shape mask to the image.
+
+    Shapes:
+        - "roundrect": rounded rectangle with given radius
+        - "circle": circular mask (inscribed in image bounds)
+        - "ellipse": elliptical mask filling image bounds
+
+    Args:
+        image: Input image
+        shape: Shape name (roundrect, circle, ellipse)
+        radius: Corner radius for roundrect (default 0)
+        invert: If True, make inside transparent and outside opaque
+
+    Returns:
+        Masked image with alpha channel applied
+    """
+    w, h = image.size
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+
+    if shape == "roundrect":
+        draw.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=radius, fill=255)
+    elif shape == "circle":
+        # Inscribed circle: centered, diameter = min(w, h)
+        diameter = min(w, h)
+        left = (w - diameter) // 2
+        top = (h - diameter) // 2
+        draw.ellipse(
+            [(left, top), (left + diameter - 1, top + diameter - 1)], fill=255
+        )
+    elif shape == "ellipse":
+        draw.ellipse([(0, 0), (w - 1, h - 1)], fill=255)
+    else:
+        raise ValueError(f"Unknown mask shape: {shape}. Use roundrect, circle, or ellipse.")
+
+    if invert:
+        mask = ImageOps.invert(mask)
+
+    # Apply mask: multiply with existing alpha
+    rgba = image.convert("RGBA")
+    r, g, b, a = rgba.split()
+    # Combine existing alpha with shape mask (min of both)
+    a = ImageChops.multiply(a, mask)
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+# =============================================================================
 # Fit and fill operations
 # =============================================================================
 
@@ -359,7 +623,11 @@ def _align_offset(
 
 
 def op_hstack(
-    image: Image.Image, other: Image.Image, align: str = "center"
+    image: Image.Image,
+    other: Image.Image,
+    align: str = "center",
+    gap: int = 0,
+    gap_color: str = "transparent",
 ) -> Image.Image:
     """Stack two images horizontally (side by side).
 
@@ -367,6 +635,8 @@ def op_hstack(
         image: Left image
         other: Right image
         align: Vertical alignment (top, center, bottom)
+        gap: Pixel spacing between images (default 0)
+        gap_color: Color for gap space (default transparent)
 
     Returns:
         Combined image
@@ -375,24 +645,29 @@ def op_hstack(
     w2, h2 = other.size
 
     # Calculate output dimensions
-    out_width = w1 + w2
+    out_width = w1 + gap + w2
     out_height = max(h1, h2)
 
     # Calculate vertical offsets for alignment
     offset1, offset2 = _align_offset(h1, h2, align, is_horizontal=False)
 
-    # Create output image with transparency
-    result = Image.new("RGBA", (out_width, out_height), (0, 0, 0, 0))
+    # Create output image
+    fill = _parse_color(gap_color)
+    result = Image.new("RGBA", (out_width, out_height), fill)
 
     # Paste images
     result.paste(image, (0, offset1))
-    result.paste(other, (w1, offset2))
+    result.paste(other, (w1 + gap, offset2))
 
     return result
 
 
 def op_vstack(
-    image: Image.Image, other: Image.Image, align: str = "center"
+    image: Image.Image,
+    other: Image.Image,
+    align: str = "center",
+    gap: int = 0,
+    gap_color: str = "transparent",
 ) -> Image.Image:
     """Stack two images vertically (one above the other).
 
@@ -400,6 +675,8 @@ def op_vstack(
         image: Top image
         other: Bottom image
         align: Horizontal alignment (left, center, right)
+        gap: Pixel spacing between images (default 0)
+        gap_color: Color for gap space (default transparent)
 
     Returns:
         Combined image
@@ -409,17 +686,18 @@ def op_vstack(
 
     # Calculate output dimensions
     out_width = max(w1, w2)
-    out_height = h1 + h2
+    out_height = h1 + gap + h2
 
     # Calculate horizontal offsets for alignment
     offset1, offset2 = _align_offset(w1, w2, align, is_horizontal=True)
 
-    # Create output image with transparency
-    result = Image.new("RGBA", (out_width, out_height), (0, 0, 0, 0))
+    # Create output image
+    fill = _parse_color(gap_color)
+    result = Image.new("RGBA", (out_width, out_height), fill)
 
     # Paste images
     result.paste(image, (offset1, 0))
-    result.paste(other, (offset2, h1))
+    result.paste(other, (offset2, h1 + gap))
 
     return result
 
@@ -489,7 +767,11 @@ def op_tile(image: Image.Image, cols: int, rows: int) -> Image.Image:
 
 
 def op_grid(
-    image: Image.Image, others: list[Image.Image], cols: int = 2
+    image: Image.Image,
+    others: list[Image.Image],
+    cols: int = 2,
+    gap: int = 0,
+    gap_color: str = "transparent",
 ) -> Image.Image:
     """Arrange multiple images in a grid.
 
@@ -500,6 +782,8 @@ def op_grid(
         image: First image (determines cell size)
         others: Additional images
         cols: Number of columns
+        gap: Pixel spacing between cells (default 0)
+        gap_color: Color for gap space (default transparent)
 
     Returns:
         Grid image
@@ -511,7 +795,10 @@ def op_grid(
     total = len(all_images)
     rows = (total + cols - 1) // cols  # Ceiling division
 
-    result = Image.new("RGBA", (cell_w * cols, cell_h * rows), (0, 0, 0, 0))
+    out_w = cell_w * cols + gap * (cols - 1)
+    out_h = cell_h * rows + gap * (rows - 1)
+    fill = _parse_color(gap_color)
+    result = Image.new("RGBA", (out_w, out_h), fill)
 
     for i, img in enumerate(all_images):
         # Resize to cell size if needed
@@ -520,7 +807,9 @@ def op_grid(
 
         row = i // cols
         col = i % cols
-        result.paste(img, (col * cell_w, row * cell_h))
+        x = col * (cell_w + gap)
+        y = row * (cell_h + gap)
+        result.paste(img, (x, y))
 
     return result
 
@@ -542,6 +831,20 @@ OPERATIONS: dict[str, Callable[..., Image.Image]] = {
     # Padding/border
     "pad": op_pad,
     "border": op_border,
+    # Color/pixel
+    "brightness": op_brightness,
+    "contrast": op_contrast,
+    "saturation": op_saturation,
+    "sharpen": op_sharpen,
+    "blur": op_blur,
+    "grayscale": op_grayscale,
+    "invert": op_invert,
+    # Trim/alpha/background
+    "trim": op_trim,
+    "colorize": op_colorize,
+    "opacity": op_opacity,
+    "background": op_background,
+    "mask": op_mask,
     # Single-image composition
     "tile": op_tile,
 }

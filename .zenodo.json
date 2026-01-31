@@ -1,0 +1,31 @@
+{
+  "title": "chop: Unix-philosophy image manipulation CLI",
+  "description": "A Unix-philosophy image manipulation CLI with lazy evaluation, JSON piping, and multi-image composition. Every command reads JSON, writes JSON, does one thing.",
+  "license": {
+    "id": "MIT"
+  },
+  "version": "0.5.0",
+  "upload_type": "software",
+  "keywords": [
+    "image-processing",
+    "command-line",
+    "unix-philosophy",
+    "json-pipeline",
+    "lazy-evaluation",
+    "composition"
+  ],
+  "creators": [
+    {
+      "name": "Towell, Alexander",
+      "affiliation": "Southern Illinois University Edwardsville",
+      "orcid": "0000-0001-6443-9897"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/spinoza/chop",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

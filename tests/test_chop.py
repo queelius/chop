@@ -1,4 +1,4 @@
-"""Tests for chop CLI with multi-image composition model (v0.3.0)."""
+"""Tests for chop CLI with uniform output model (v0.4.0)."""
 
 from __future__ import annotations
 
@@ -29,6 +29,18 @@ from chop.operations import (
     op_overlay,
     op_tile,
     op_grid,
+    op_brightness,
+    op_contrast,
+    op_saturation,
+    op_sharpen,
+    op_blur,
+    op_grayscale,
+    op_invert,
+    op_trim,
+    op_colorize,
+    op_opacity,
+    op_background,
+    op_mask,
     apply_operation,
     OPERATIONS,
     COMPOSITION_OPS,
@@ -178,6 +190,81 @@ class TestOperations:
         assert result.size == (80, 80)
 
 
+class TestColorOperations:
+    """Tests for color/pixel operations."""
+
+    def test_brightness_increase(self, test_image: Image.Image):
+        result = op_brightness(test_image, 1.5)
+        assert result.size == test_image.size
+        # Brighter image should have higher average pixel value
+        orig_avg = sum(test_image.getpixel((50, 40))[:3]) / 3
+        result_avg = sum(result.getpixel((50, 40))[:3]) / 3
+        assert result_avg > orig_avg
+
+    def test_brightness_decrease(self, test_image: Image.Image):
+        result = op_brightness(test_image, 0.5)
+        orig_avg = sum(test_image.getpixel((50, 40))[:3]) / 3
+        result_avg = sum(result.getpixel((50, 40))[:3]) / 3
+        assert result_avg < orig_avg
+
+    def test_brightness_no_change(self, test_image: Image.Image):
+        result = op_brightness(test_image, 1.0)
+        assert result.getpixel((50, 40)) == test_image.getpixel((50, 40))
+
+    def test_contrast(self, test_image: Image.Image):
+        result = op_contrast(test_image, 1.5)
+        assert result.size == test_image.size
+
+    def test_saturation(self, test_image: Image.Image):
+        result = op_saturation(test_image, 1.5)
+        assert result.size == test_image.size
+
+    def test_saturation_zero_is_grayscale(self, test_image: Image.Image):
+        result = op_saturation(test_image, 0.0)
+        r, g, b, a = result.getpixel((50, 40))
+        # With zero saturation, R=G=B (grayscale)
+        assert r == g == b
+
+    def test_sharpen(self, test_image: Image.Image):
+        result = op_sharpen(test_image, 2.0)
+        assert result.size == test_image.size
+
+    def test_blur(self, test_image: Image.Image):
+        result = op_blur(test_image, 3.0)
+        assert result.size == test_image.size
+
+    def test_grayscale_preserves_alpha(self):
+        img = Image.new("RGBA", (10, 10), color=(255, 0, 0, 128))
+        result = op_grayscale(img)
+        assert result.mode == "RGBA"
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 128
+
+    def test_grayscale_channels_equal(self, test_image: Image.Image):
+        result = op_grayscale(test_image)
+        r, g, b, _ = result.getpixel((50, 40))
+        assert r == g == b
+
+    def test_grayscale_rgb_input(self):
+        img = Image.new("RGB", (10, 10), color=(255, 0, 0))
+        result = op_grayscale(img)
+        assert result.mode == "RGBA"
+
+    def test_invert_rgb(self):
+        img = Image.new("RGBA", (10, 10), color=(100, 150, 200, 255))
+        result = op_invert(img)
+        r, g, b, a = result.getpixel((5, 5))
+        assert r == 155
+        assert g == 105
+        assert b == 55
+
+    def test_invert_preserves_alpha(self):
+        img = Image.new("RGBA", (10, 10), color=(100, 150, 200, 128))
+        result = op_invert(img)
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 128
+
+
 class TestOperationsRegistry:
     """Tests for the operations registry and apply_operation."""
 
@@ -190,6 +277,19 @@ class TestOperationsRegistry:
         assert "border" in OPERATIONS
         assert "fit" in OPERATIONS
         assert "fill" in OPERATIONS
+
+    def test_registry_contains_color_ops(self):
+        assert "brightness" in OPERATIONS
+        assert "contrast" in OPERATIONS
+        assert "saturation" in OPERATIONS
+        assert "sharpen" in OPERATIONS
+        assert "blur" in OPERATIONS
+        assert "grayscale" in OPERATIONS
+        assert "invert" in OPERATIONS
+
+    def test_registry_count(self):
+        """OPERATIONS should have 21 entries (9 geometric + 7 color + 4 trim/alpha + 1 mask)."""
+        assert len(OPERATIONS) == 21
 
     def test_composition_ops_set(self):
         """Test that COMPOSITION_OPS contains the expected ops."""
@@ -223,6 +323,23 @@ class TestOperationsRegistry:
     def test_apply_operation_fill(self, test_image: Image.Image):
         result = apply_operation(test_image, "fill", "50x50")
         assert result.size == (50, 50)
+
+    def test_apply_operation_brightness(self, test_image: Image.Image):
+        result = apply_operation(test_image, "brightness", 1.5)
+        assert result.size == test_image.size
+
+    def test_apply_operation_blur(self, test_image: Image.Image):
+        result = apply_operation(test_image, "blur", 2.0)
+        assert result.size == test_image.size
+
+    def test_apply_operation_grayscale(self, test_image: Image.Image):
+        result = apply_operation(test_image, "grayscale")
+        r, g, b, _ = result.getpixel((50, 40))
+        assert r == g == b
+
+    def test_apply_operation_invert(self, test_image: Image.Image):
+        result = apply_operation(test_image, "invert")
+        assert result.size == test_image.size
 
     def test_apply_operation_unknown(self, test_image: Image.Image):
         with pytest.raises(ValueError, match="Unknown operation"):
@@ -761,7 +878,7 @@ class TestUnboundPipeline:
 
 
 class TestOutputHandling:
-    """Tests for centralized output handling."""
+    """Tests for uniform output handling (always JSON)."""
 
     @pytest.fixture
     def bound_state(self, test_image_file: str) -> PipelineState:
@@ -777,57 +894,23 @@ class TestOutputHandling:
         state.add_op("resize", "50%")
         return state
 
-    def test_json_flag_forces_json(self, bound_state: PipelineState):
-        """Test -j flag forces JSON output."""
-        args = mock.Mock(json=True, output=None)
-
+    def test_always_json_output(self, bound_state: PipelineState):
+        """Test handle_output always writes JSON."""
         with mock.patch("chop.pipeline.write_pipeline_output") as mock_write:
-            with mock.patch("sys.stdout.isatty", return_value=True):
-                handle_output(bound_state, args)
-                mock_write.assert_called_once_with(bound_state)
+            handle_output(bound_state)
+            mock_write.assert_called_once_with(bound_state)
 
-    def test_output_flag_saves_file(self, bound_state: PipelineState):
-        """Test -o flag materializes and saves to file."""
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            args = mock.Mock(json=False, output=f.name)
-            handle_output(bound_state, args)
-            assert Path(f.name).exists()
-            Path(f.name).unlink()
-
-    def test_piped_outputs_json(self, bound_state: PipelineState):
-        """Test piped output writes JSON."""
-        args = mock.Mock(json=False, output=None)
-
-        with mock.patch("sys.stdout.isatty", return_value=False):
-            with mock.patch("chop.pipeline.write_pipeline_output") as mock_write:
-                handle_output(bound_state, args)
-                mock_write.assert_called_once_with(bound_state)
-
-    def test_unbound_json_flag_works(self, unbound_state: PipelineState):
-        """Test -j flag works on unbound pipeline."""
-        args = mock.Mock(json=True, output=None)
-
+    def test_unbound_outputs_json(self, unbound_state: PipelineState):
+        """Test unbound pipeline also outputs JSON (no TTY special case)."""
         with mock.patch("chop.pipeline.write_pipeline_output") as mock_write:
-            handle_output(unbound_state, args)
+            handle_output(unbound_state)
             mock_write.assert_called_once_with(unbound_state)
 
-    def test_unbound_output_flag_errors(self, unbound_state: PipelineState):
-        """Test -o flag on unbound pipeline exits with error."""
-        args = mock.Mock(json=False, output="/tmp/out.png")
-
-        with pytest.raises(SystemExit):
-            handle_output(unbound_state, args)
-
-    def test_tty_unbound_shows_program(self, unbound_state: PipelineState, capsys):
-        """Test TTY + unbound shows program listing."""
-        args = mock.Mock(json=False, output=None)
-
-        with mock.patch("sys.stdout.isatty", return_value=True):
-            handle_output(unbound_state, args)
-
-        captured = capsys.readouterr()
-        assert "Program:" in captured.err
-        assert "resize 50%" in captured.err
+    def test_handle_output_no_args_parameter(self):
+        """Test handle_output takes only state (no args)."""
+        import inspect
+        sig = inspect.signature(handle_output)
+        assert list(sig.parameters.keys()) == ["state"]
 
 
 class TestSaveCommand:
@@ -844,12 +927,44 @@ class TestSaveCommand:
             args = mock.Mock(path=f.name, format=None)
 
             with mock.patch("chop.cli.read_pipeline_input", return_value=state):
-                cmd_save(args)
+                result = cmd_save(args)
 
+            assert result is not None  # Returns state for chaining
+            assert isinstance(result, PipelineState)
             assert Path(f.name).exists()
             saved = Image.open(f.name)
             assert saved.size == (100, 80)
             Path(f.name).unlink()
+
+    def test_save_returns_state_for_chaining(self, test_image_file: str):
+        """Test save returns PipelineState (non-terminal)."""
+        from chop.cli import cmd_save
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            args = mock.Mock(path=f.name, format=None)
+            with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+                result = cmd_save(args)
+            assert result is state
+            Path(f.name).unlink()
+
+    def test_save_stdout_returns_none(self, test_image_file: str):
+        """Test save to stdout returns None (binary can't coexist with JSON)."""
+        from chop.cli import cmd_save
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        args = mock.Mock(path="-", format="png")
+
+        buf = io.BytesIO()
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            with mock.patch("sys.stdout") as mock_stdout:
+                mock_stdout.buffer = buf
+                result = cmd_save(args)
+
+        assert result is None
 
     def test_save_unbound_raises(self):
         """Test save on unbound pipeline raises."""
@@ -873,6 +988,22 @@ class TestSaveCommand:
         with mock.patch("chop.cli.read_pipeline_input", return_value=state):
             with pytest.raises(ValueError, match="Nothing to save"):
                 cmd_save(args)
+
+    def test_save_stderr_message(self, test_image_file: str, capsys):
+        """Test save prints confirmation to stderr."""
+        from chop.cli import cmd_save
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            args = mock.Mock(path=f.name, format=None)
+            with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+                cmd_save(args)
+
+            captured = capsys.readouterr()
+            assert "Saved to" in captured.err
+            Path(f.name).unlink()
 
 
 class TestSaveToStdout:
@@ -922,10 +1053,55 @@ class TestInfoCommand:
         args = mock.Mock()
 
         with mock.patch("chop.cli.read_pipeline_input", return_value=state):
-            cmd_info(args)
+            result = cmd_info(args)
 
         captured = capsys.readouterr()
         assert "Cursor image: 50x40" in captured.err
+        assert isinstance(result, PipelineState)
+
+    def test_info_returns_state(self, test_image_file: str):
+        """Test info returns PipelineState for chaining."""
+        from chop.cli import cmd_info
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        args = mock.Mock()
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_info(args)
+
+        assert result is state
+
+    def test_info_enriches_metadata(self, test_image_file: str):
+        """Test info adds width/height/mode/images_loaded to metadata."""
+        from chop.cli import cmd_info
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        args = mock.Mock()
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_info(args)
+
+        assert result.metadata["width"] == 100
+        assert result.metadata["height"] == 80
+        assert result.metadata["mode"] == "RGBA"
+        assert result.metadata["images_loaded"] == 1
+
+    def test_info_metadata_survives_json(self, test_image_file: str):
+        """Test info metadata survives JSON serialization."""
+        from chop.cli import cmd_info
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        args = mock.Mock()
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_info(args)
+
+        json_str = result.to_json()
+        restored = PipelineState.from_json(json_str)
+        assert restored.metadata["width"] == 100
 
     def test_info_unbound_pipeline(self, capsys):
         """Test info on unbound pipeline shows program listing."""
@@ -937,11 +1113,12 @@ class TestInfoCommand:
         args = mock.Mock()
 
         with mock.patch("chop.cli.read_pipeline_input", return_value=state):
-            cmd_info(args)
+            result = cmd_info(args)
 
         captured = capsys.readouterr()
         assert "Unbound program" in captured.err
         assert "resize 50%" in captured.err
+        assert isinstance(result, PipelineState)
 
     def test_info_empty_pipeline(self, capsys):
         """Test info on empty pipeline."""
@@ -951,10 +1128,11 @@ class TestInfoCommand:
         args = mock.Mock()
 
         with mock.patch("chop.cli.read_pipeline_input", return_value=state):
-            cmd_info(args)
+            result = cmd_info(args)
 
         captured = capsys.readouterr()
         assert "Empty pipeline" in captured.err
+        assert isinstance(result, PipelineState)
 
     def test_info_multi_load_shows_count(self, test_image_file: str, second_image_file: str, capsys):
         """Test info shows image count for multi-load pipeline."""
@@ -970,6 +1148,69 @@ class TestInfoCommand:
 
         captured = capsys.readouterr()
         assert "Images loaded: 2" in captured.err
+
+
+class TestPrintCommand:
+    """Tests for the print command."""
+
+    def test_print_default_message(self, capsys):
+        """Test print shows op count and bound/unbound status."""
+        from chop.cli import cmd_print
+
+        state = PipelineState()
+        state.add_op("resize", "50%")
+        state.add_op("pad", 10)
+        args = mock.Mock(message=None)
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_print(args)
+
+        captured = capsys.readouterr()
+        assert "Pipeline: 2 ops (unbound)" in captured.err
+        assert isinstance(result, PipelineState)
+
+    def test_print_bound_status(self, test_image_file: str, capsys):
+        """Test print shows bound status when pipeline has load."""
+        from chop.cli import cmd_print
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("resize", "50%")
+        args = mock.Mock(message=None)
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            cmd_print(args)
+
+        captured = capsys.readouterr()
+        assert "Pipeline: 2 ops (bound)" in captured.err
+
+    def test_print_custom_message(self, capsys):
+        """Test print with custom message."""
+        from chop.cli import cmd_print
+
+        state = PipelineState()
+        args = mock.Mock(message="custom debug info")
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_print(args)
+
+        captured = capsys.readouterr()
+        assert "custom debug info" in captured.err
+        assert isinstance(result, PipelineState)
+
+    def test_print_returns_state_unchanged(self):
+        """Test print does not modify state."""
+        from chop.cli import cmd_print
+
+        state = PipelineState()
+        state.add_op("resize", "50%")
+        args = mock.Mock(message=None)
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_print(args)
+
+        assert result is state
+        assert len(result.ops) == 1
 
 
 class TestApplyCommand:
@@ -1120,7 +1361,7 @@ class TestCLIHandlers:
         """Test cmd_hstack with label args."""
         from chop.cli import cmd_hstack
 
-        args = mock.Mock(images=["a", "b"], align="center", label=None)
+        args = mock.Mock(images=["a", "b"], align="center", gap=0, gap_color="transparent", label=None)
         with mock.patch("chop.cli.read_pipeline_input", return_value=None):
             state = cmd_hstack(args)
 
@@ -1130,7 +1371,7 @@ class TestCLIHandlers:
         """Test cmd_hstack with no label args (default all)."""
         from chop.cli import cmd_hstack
 
-        args = mock.Mock(images=[], align="center", label=None)
+        args = mock.Mock(images=[], align="center", gap=0, gap_color="transparent", label=None)
         with mock.patch("chop.cli.read_pipeline_input", return_value=None):
             state = cmd_hstack(args)
 
@@ -1150,7 +1391,7 @@ class TestCLIHandlers:
         """Test cmd_grid with cols and --as."""
         from chop.cli import cmd_grid
 
-        args = mock.Mock(images=["a", "b", "c", "d"], cols=2, label="result")
+        args = mock.Mock(images=["a", "b", "c", "d"], cols=2, gap=0, gap_color="transparent", label="result")
         with mock.patch("chop.cli.read_pipeline_input", return_value=None):
             state = cmd_grid(args)
 
@@ -1177,6 +1418,184 @@ class TestCLIHandlers:
             state = get_or_create_state()
 
         assert len(state.ops) == 0
+
+
+class TestColorCLIHandlers:
+    """Tests for color operation CLI handlers."""
+
+    def test_cmd_brightness(self):
+        from chop.cli import cmd_brightness
+        args = mock.Mock(factor=1.5, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_brightness(args)
+        assert state.ops[0] == ("brightness", (1.5,), {})
+
+    def test_cmd_brightness_with_on(self):
+        from chop.cli import cmd_brightness
+        args = mock.Mock(factor=1.5, on="fg")
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_brightness(args)
+        assert state.ops[0] == ("brightness", (1.5,), {"on": "fg"})
+
+    def test_cmd_contrast(self):
+        from chop.cli import cmd_contrast
+        args = mock.Mock(factor=1.2, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_contrast(args)
+        assert state.ops[0] == ("contrast", (1.2,), {})
+
+    def test_cmd_saturation(self):
+        from chop.cli import cmd_saturation
+        args = mock.Mock(factor=0.5, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_saturation(args)
+        assert state.ops[0] == ("saturation", (0.5,), {})
+
+    def test_cmd_sharpen(self):
+        from chop.cli import cmd_sharpen
+        args = mock.Mock(factor=2.0, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_sharpen(args)
+        assert state.ops[0] == ("sharpen", (2.0,), {})
+
+    def test_cmd_blur(self):
+        from chop.cli import cmd_blur
+        args = mock.Mock(radius=3.0, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_blur(args)
+        assert state.ops[0] == ("blur", (3.0,), {})
+
+    def test_cmd_grayscale(self):
+        from chop.cli import cmd_grayscale
+        args = mock.Mock(on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_grayscale(args)
+        assert state.ops[0] == ("grayscale", (), {})
+
+    def test_cmd_invert(self):
+        from chop.cli import cmd_invert
+        args = mock.Mock(on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_invert(args)
+        assert state.ops[0] == ("invert", (), {})
+
+    def test_cmd_invert_with_on(self):
+        from chop.cli import cmd_invert
+        args = mock.Mock(on="bg")
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_invert(args)
+        assert state.ops[0] == ("invert", (), {"on": "bg"})
+
+
+class TestColorPipeline:
+    """Tests for color operations in pipeline context."""
+
+    def test_color_op_materializes(self, test_image_file: str):
+        """Test color op in pipeline materializes correctly."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("brightness", 1.5)
+
+        image = state.materialize()
+        assert image.size == (100, 80)
+
+    def test_chain_multiple_color_ops(self, test_image_file: str):
+        """Test chaining multiple color operations."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("brightness", 1.2)
+        state.add_op("contrast", 1.3)
+        state.add_op("saturation", 0.8)
+
+        image = state.materialize()
+        assert image.size == (100, 80)
+
+    def test_grayscale_then_resize(self, test_image_file: str):
+        """Test grayscale followed by resize."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("grayscale")
+        state.add_op("resize", "50%")
+
+        image = state.materialize()
+        assert image.size == (50, 40)
+
+    def test_color_op_with_on_flag(self, test_image_file: str, second_image_file: str):
+        """Test color op targeting a specific labeled image."""
+        state = PipelineState()
+        state.add_op("load", test_image_file, **{"as": "a"})
+        state.add_op("load", second_image_file, **{"as": "b"})
+        state.add_op("brightness", 1.5, on="a")
+
+        # Should not raise — applies brightness to 'a', cursor on 'b'
+        image = state.materialize()
+        assert image.size == (50, 40)
+
+    def test_color_ops_json_roundtrip(self):
+        """Test color ops survive JSON serialization."""
+        state = PipelineState()
+        state.add_op("brightness", 1.5)
+        state.add_op("grayscale")
+        state.add_op("blur", 2.0)
+
+        json_str = state.to_json()
+        restored = PipelineState.from_json(json_str)
+
+        assert len(restored.ops) == 3
+        assert restored.ops[0] == ("brightness", (1.5,), {})
+        assert restored.ops[1] == ("grayscale", (), {})
+        assert restored.ops[2] == ("blur", (2.0,), {})
+
+
+class TestUniformityIntegration:
+    """Integration tests for uniform output model."""
+
+    def test_multi_save_pipeline(self, test_image_file: str):
+        """Test save returns state, enabling chaining."""
+        from chop.cli import cmd_save
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            args = mock.Mock(path=f.name, format=None)
+            with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+                result = cmd_save(args)
+
+            assert result is not None
+            assert result is state
+            Path(f.name).unlink()
+
+    def test_info_in_middle_preserves_ops(self, test_image_file: str):
+        """Test info in middle of pipeline preserves all ops."""
+        from chop.cli import cmd_info
+
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("resize", "50%")
+        args = mock.Mock()
+
+        with mock.patch("chop.cli.read_pipeline_input", return_value=state):
+            result = cmd_info(args)
+
+        assert len(result.ops) == 2
+        assert result.ops[0][0] == "load"
+        assert result.ops[1] == ("resize", ("50%",), {})
+
+    def test_no_terminal_handlers_dict(self):
+        """Test main() source has no terminal_handlers dict."""
+        import inspect
+        from chop.cli import main
+        source = inspect.getsource(main)
+        assert "terminal_handlers" not in source
+
+    def test_unified_handlers_dict(self):
+        """Test main() uses a single unified handlers dict."""
+        import inspect
+        from chop.cli import main
+        source = inspect.getsource(main)
+        assert "handlers" in source
+        assert "state_handlers" not in source
 
 
 class TestLazyPipelineIntegration:
@@ -1260,3 +1679,620 @@ class TestLazyPipelineIntegration:
         image = state.materialize()
         # 100x80 → resize 50% → 50x40 → border 5 → 60x50
         assert image.size == (60, 50)
+
+    def test_color_ops_in_full_pipeline(self, test_image_file: str):
+        """Integration test: color ops mixed with geometric ops."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("brightness", 1.3)
+        state.add_op("resize", "50%")
+        state.add_op("grayscale")
+        state.add_op("border", 2, color="white")
+
+        image = state.materialize()
+        # 100x80 → resize 50% → 50x40 → border 2 → 54x44
+        assert image.size == (54, 44)
+
+
+# =============================================================================
+# Tests for new operations (v0.5.0)
+# =============================================================================
+
+
+class TestTrimOperation:
+    """Tests for op_trim."""
+
+    def test_trim_transparent_padding(self):
+        """Trim removes transparent borders."""
+        inner = Image.new("RGBA", (40, 30), (255, 0, 0, 255))
+        padded = Image.new("RGBA", (80, 70), (0, 0, 0, 0))
+        padded.paste(inner, (20, 20))
+        result = op_trim(padded)
+        assert result.size == (40, 30)
+
+    def test_trim_uniform_color_border(self):
+        """Trim removes solid color borders from opaque image."""
+        inner = Image.new("RGB", (40, 30), (255, 0, 0))
+        padded = Image.new("RGB", (80, 70), (255, 255, 255))
+        padded.paste(inner, (20, 20))
+        result = op_trim(padded)
+        assert result.size == (40, 30)
+
+    def test_trim_no_border(self, test_image: Image.Image):
+        """Trim on image with no uniform border returns same size."""
+        # test_image is uniform color, so trimming transparent around it does nothing
+        # because it's fully opaque — but the RGBA image has no transparent border
+        result = op_trim(test_image)
+        assert result.size == test_image.size
+
+    def test_trim_with_fuzz(self):
+        """Trim with fuzz tolerance removes near-matching borders."""
+        # Create inner content
+        inner = Image.new("RGBA", (40, 30), (255, 0, 0, 255))
+        # Create border with slightly-off transparent (alpha=5)
+        padded = Image.new("RGBA", (80, 70), (0, 0, 0, 5))
+        padded.paste(inner, (20, 20))
+        # Without fuzz, the near-transparent border might not trim fully
+        result_no_fuzz = op_trim(padded, fuzz=0)
+        result_fuzz = op_trim(padded, fuzz=10)
+        assert result_fuzz.size == (40, 30)
+
+    def test_trim_fully_uniform(self):
+        """Trim on fully uniform image returns original (nothing to crop)."""
+        img = Image.new("RGBA", (50, 50), (0, 0, 0, 0))
+        result = op_trim(img)
+        assert result.size == (50, 50)
+
+    def test_trim_via_apply_operation(self, test_image: Image.Image):
+        """Test trim through apply_operation dispatch."""
+        result = apply_operation(test_image, "trim")
+        assert result.size == test_image.size
+
+    def test_trim_pipeline(self, test_image_file: str):
+        """Test trim in a pipeline: pad then trim restores size."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("pad", 20, color="white")
+        state.add_op("trim")
+        image = state.materialize()
+        assert image.size == (100, 80)
+
+
+class TestColorizeOperation:
+    """Tests for op_colorize."""
+
+    def test_colorize_basic(self, test_image: Image.Image):
+        """Colorize tints the image."""
+        result = op_colorize(test_image, "red")
+        assert result.size == test_image.size
+        assert result.mode == "RGBA"
+        r, g, b, _ = result.getpixel((50, 40))
+        # Red tint: R should dominate, G and B should be low
+        assert r > g
+        assert r > b
+
+    def test_colorize_with_hex(self, test_image: Image.Image):
+        """Colorize works with hex color."""
+        result = op_colorize(test_image, "#704214")
+        assert result.size == test_image.size
+
+    def test_colorize_strength_zero(self, test_image: Image.Image):
+        """Colorize with strength=0 returns original."""
+        result = op_colorize(test_image, "red", strength=0.0)
+        orig = test_image.convert("RGBA")
+        assert result.getpixel((50, 40)) == orig.getpixel((50, 40))
+
+    def test_colorize_strength_partial(self, test_image: Image.Image):
+        """Colorize with partial strength blends."""
+        full = op_colorize(test_image, "blue", strength=1.0)
+        partial = op_colorize(test_image, "blue", strength=0.5)
+        orig = test_image.convert("RGBA")
+        # Partial should be between original and full
+        _, _, b_full, _ = full.getpixel((50, 40))
+        _, _, b_partial, _ = partial.getpixel((50, 40))
+        _, _, b_orig, _ = orig.getpixel((50, 40))
+        assert min(b_orig, b_full) <= b_partial <= max(b_orig, b_full)
+
+    def test_colorize_preserves_alpha(self):
+        """Colorize preserves the alpha channel."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 128))
+        result = op_colorize(img, "blue")
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 128
+
+    def test_colorize_via_apply_operation(self, test_image: Image.Image):
+        """Test colorize through apply_operation dispatch."""
+        result = apply_operation(test_image, "colorize", "#704214")
+        assert result.size == test_image.size
+
+    def test_colorize_pipeline(self, test_image_file: str):
+        """Test colorize in pipeline with grayscale for sepia effect."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("grayscale")
+        state.add_op("colorize", "#704214")
+        image = state.materialize()
+        assert image.size == (100, 80)
+
+
+class TestOpacityOperation:
+    """Tests for op_opacity."""
+
+    def test_opacity_half(self):
+        """Opacity 0.5 halves alpha channel."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 200))
+        result = op_opacity(img, 0.5)
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 100
+
+    def test_opacity_zero(self):
+        """Opacity 0 makes fully transparent."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 255))
+        result = op_opacity(img, 0.0)
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 0
+
+    def test_opacity_one(self):
+        """Opacity 1.0 preserves alpha."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 200))
+        result = op_opacity(img, 1.0)
+        _, _, _, a = result.getpixel((5, 5))
+        assert a == 200
+
+    def test_opacity_preserves_rgb(self):
+        """Opacity only affects alpha, not RGB."""
+        img = Image.new("RGBA", (10, 10), (100, 150, 200, 255))
+        result = op_opacity(img, 0.5)
+        r, g, b, _ = result.getpixel((5, 5))
+        assert (r, g, b) == (100, 150, 200)
+
+    def test_opacity_via_apply_operation(self, test_image: Image.Image):
+        """Test opacity through apply_operation dispatch."""
+        result = apply_operation(test_image, "opacity", 0.5)
+        _, _, _, a = result.getpixel((50, 40))
+        assert a == 127  # 255 * 0.5
+
+    def test_opacity_pipeline(self, test_image_file: str):
+        """Test opacity in pipeline."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("opacity", 0.3)
+        image = state.materialize()
+        _, _, _, a = image.getpixel((50, 40))
+        assert a == 76  # 255 * 0.3 = 76.5 → int 76
+
+
+class TestBackgroundOperation:
+    """Tests for op_background."""
+
+    def test_background_white(self):
+        """Background flattens onto white."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 128))
+        result = op_background(img, "white")
+        r, g, b, a = result.getpixel((5, 5))
+        assert a == 255  # Fully opaque
+        # Semi-transparent red on white → pinkish
+        assert r > g
+        assert r > b
+
+    def test_background_black(self):
+        """Background flattens onto black."""
+        img = Image.new("RGBA", (10, 10), (255, 0, 0, 128))
+        result = op_background(img, "black")
+        r, g, b, a = result.getpixel((5, 5))
+        assert a == 255
+
+    def test_background_opaque_image(self):
+        """Background on fully opaque image preserves colors."""
+        img = Image.new("RGBA", (10, 10), (100, 150, 200, 255))
+        result = op_background(img, "white")
+        r, g, b, a = result.getpixel((5, 5))
+        assert (r, g, b, a) == (100, 150, 200, 255)
+
+    def test_background_transparent_image(self):
+        """Background on fully transparent image shows background color."""
+        img = Image.new("RGBA", (10, 10), (0, 0, 0, 0))
+        result = op_background(img, "red")
+        r, g, b, a = result.getpixel((5, 5))
+        assert (r, g, b, a) == (255, 0, 0, 255)
+
+    def test_background_via_apply_operation(self, test_image: Image.Image):
+        """Test background through apply_operation dispatch."""
+        result = apply_operation(test_image, "background", "white")
+        _, _, _, a = result.getpixel((50, 40))
+        assert a == 255
+
+    def test_background_pipeline(self, test_image_file: str):
+        """Test background in pipeline."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("background", "white")
+        image = state.materialize()
+        _, _, _, a = image.getpixel((50, 40))
+        assert a == 255
+
+
+class TestMaskOperation:
+    """Tests for op_mask."""
+
+    def test_mask_circle(self, test_image: Image.Image):
+        """Circle mask makes corners transparent."""
+        result = op_mask(test_image, "circle")
+        assert result.size == test_image.size
+        # Corner should be transparent
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 0
+        # Center should be opaque
+        _, _, _, a = result.getpixel((50, 40))
+        assert a == 255
+
+    def test_mask_ellipse(self, test_image: Image.Image):
+        """Ellipse mask fills image bounds."""
+        result = op_mask(test_image, "ellipse")
+        assert result.size == test_image.size
+        # Corner should be transparent
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 0
+
+    def test_mask_roundrect(self, test_image: Image.Image):
+        """Roundrect mask with radius."""
+        result = op_mask(test_image, "roundrect", radius=20)
+        assert result.size == test_image.size
+        # Corner should be transparent
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 0
+        # Center should be opaque
+        _, _, _, a = result.getpixel((50, 40))
+        assert a == 255
+
+    def test_mask_roundrect_zero_radius(self, test_image: Image.Image):
+        """Roundrect with radius=0 is a full rectangle (everything visible)."""
+        result = op_mask(test_image, "roundrect", radius=0)
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 255
+
+    def test_mask_invert(self, test_image: Image.Image):
+        """Inverted mask makes inside transparent, outside opaque."""
+        result = op_mask(test_image, "circle", invert=True)
+        # Center should be transparent (inverted)
+        _, _, _, a = result.getpixel((50, 40))
+        assert a == 0
+        # Corner should be opaque (inverted)
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 255
+
+    def test_mask_preserves_existing_alpha(self):
+        """Mask multiplies with existing alpha (doesn't replace)."""
+        img = Image.new("RGBA", (100, 100), (255, 0, 0, 128))
+        result = op_mask(img, "circle")
+        # Center should have alpha = min(128, 255) via multiply → 128
+        _, _, _, a = result.getpixel((50, 50))
+        assert a == 128
+        # Corner should be 0 (128 * 0 via multiply)
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 0
+
+    def test_mask_unknown_shape(self, test_image: Image.Image):
+        """Unknown shape raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown mask shape"):
+            op_mask(test_image, "star")
+
+    def test_mask_via_apply_operation(self, test_image: Image.Image):
+        """Test mask through apply_operation dispatch."""
+        result = apply_operation(test_image, "mask", "circle")
+        _, _, _, a = result.getpixel((0, 0))
+        assert a == 0
+
+    def test_mask_pipeline(self, test_image_file: str):
+        """Test mask in pipeline."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("mask", "roundrect", radius=10)
+        image = state.materialize()
+        assert image.size == (100, 80)
+        _, _, _, a = image.getpixel((0, 0))
+        assert a == 0
+
+
+class TestGapOnComposition:
+    """Tests for --gap/--gap-color on hstack, vstack, grid."""
+
+    @pytest.fixture
+    def img_a(self) -> Image.Image:
+        return Image.new("RGBA", (50, 40), (255, 0, 0, 255))
+
+    @pytest.fixture
+    def img_b(self) -> Image.Image:
+        return Image.new("RGBA", (50, 40), (0, 255, 0, 255))
+
+    def test_hstack_gap(self, img_a, img_b):
+        """Hstack with gap adds spacing."""
+        result = op_hstack(img_a, img_b, gap=10)
+        assert result.size == (110, 40)  # 50 + 10 + 50
+
+    def test_hstack_gap_color(self, img_a, img_b):
+        """Hstack gap region has correct color."""
+        result = op_hstack(img_a, img_b, gap=10, gap_color="white")
+        # Gap pixel (between the two images) should be white
+        r, g, b, a = result.getpixel((55, 20))
+        assert (r, g, b) == (255, 255, 255)
+
+    def test_hstack_gap_zero(self, img_a, img_b):
+        """Hstack with gap=0 is same as no gap."""
+        result = op_hstack(img_a, img_b, gap=0)
+        assert result.size == (100, 40)
+
+    def test_vstack_gap(self, img_a, img_b):
+        """Vstack with gap adds spacing."""
+        result = op_vstack(img_a, img_b, gap=10)
+        assert result.size == (50, 90)  # 40 + 10 + 40
+
+    def test_vstack_gap_color(self, img_a, img_b):
+        """Vstack gap region has correct color."""
+        result = op_vstack(img_a, img_b, gap=10, gap_color="blue")
+        # Gap pixel (between the two images) should be blue
+        r, g, b, a = result.getpixel((25, 45))
+        assert (r, g, b) == (0, 0, 255)
+
+    def test_grid_gap(self, img_a):
+        """Grid with gap adds spacing between cells."""
+        others = [img_a.copy(), img_a.copy(), img_a.copy()]
+        result = op_grid(img_a, others, cols=2, gap=10)
+        # 2 cols: 50 + 10 + 50 = 110 wide
+        # 2 rows: 40 + 10 + 40 = 90 tall
+        assert result.size == (110, 90)
+
+    def test_grid_gap_color(self, img_a):
+        """Grid gap has correct color."""
+        img_b = Image.new("RGBA", (50, 40), (0, 255, 0, 255))
+        result = op_grid(img_a, [img_b], cols=2, gap=10, gap_color="white")
+        # Gap between the two images
+        r, g, b, a = result.getpixel((55, 20))
+        assert (r, g, b) == (255, 255, 255)
+
+    def test_hstack_gap_pipeline(self, test_image_file: str, second_image_file: str):
+        """Test gap in hstack via pipeline."""
+        state = PipelineState()
+        state.add_op("load", test_image_file, **{"as": "a"})
+        state.add_op("load", second_image_file, **{"as": "b"})
+        state.add_op("hstack", "a", "b", gap=10, gap_color="white")
+        image = state.materialize()
+        assert image.size == (160, 80)  # 100 + 10 + 50
+
+    def test_grid_gap_pipeline(self, test_image_file: str):
+        """Test gap in grid via pipeline."""
+        state = PipelineState()
+        state.add_op("load", test_image_file, **{"as": "a"})
+        state.add_op("load", test_image_file, **{"as": "b"})
+        state.add_op("load", test_image_file, **{"as": "c"})
+        state.add_op("load", test_image_file, **{"as": "d"})
+        state.add_op("grid", "a", "b", "c", "d", cols=2, gap=5)
+        image = state.materialize()
+        # 2 cols: 100 + 5 + 100 = 205 wide
+        # 2 rows: 80 + 5 + 80 = 165 tall
+        assert image.size == (205, 165)
+
+
+class TestCanvasOperation:
+    """Tests for canvas source operation."""
+
+    def test_canvas_basic(self):
+        """Canvas creates blank image."""
+        state = PipelineState()
+        state.add_op("canvas", "200x100")
+        image = state.materialize()
+        assert image.size == (200, 100)
+        assert image.mode == "RGBA"
+
+    def test_canvas_with_color(self):
+        """Canvas with color fills the image."""
+        state = PipelineState()
+        state.add_op("canvas", "50x50", color="red")
+        image = state.materialize()
+        r, g, b, a = image.getpixel((25, 25))
+        assert (r, g, b, a) == (255, 0, 0, 255)
+
+    def test_canvas_transparent(self):
+        """Canvas defaults to transparent."""
+        state = PipelineState()
+        state.add_op("canvas", "50x50")
+        image = state.materialize()
+        _, _, _, a = image.getpixel((25, 25))
+        assert a == 0
+
+    def test_canvas_with_label(self):
+        """Canvas with --as creates named label."""
+        state = PipelineState()
+        state.add_op("canvas", "200x100", **{"as": "bg"})
+        state.add_op("select", "bg")
+        image = state.materialize()
+        assert image.size == (200, 100)
+
+    def test_canvas_auto_label(self):
+        """Canvas without --as gets auto-label."""
+        state = PipelineState()
+        state.add_op("canvas", "200x100")
+        state.add_op("select", "img")  # First auto-label
+        state.materialize()  # Should not raise
+
+    def test_canvas_has_load_true(self):
+        """has_load returns True for canvas-based pipeline."""
+        state = PipelineState()
+        state.add_op("canvas", "200x100")
+        assert state.has_load()
+
+    def test_canvas_with_overlay(self, test_image_file: str):
+        """Canvas as background for overlay composition."""
+        state = PipelineState()
+        state.add_op("canvas", "200x100", color="white", **{"as": "bg"})
+        state.add_op("load", test_image_file, **{"as": "fg"})
+        state.add_op("overlay", "bg", "fg", x=50, y=10)
+        image = state.materialize()
+        assert image.size == (200, 100)
+
+    def test_canvas_json_roundtrip(self):
+        """Canvas op survives JSON serialization."""
+        state = PipelineState()
+        state.add_op("canvas", "800x600", color="blue", **{"as": "bg"})
+        json_str = state.to_json()
+        restored = PipelineState.from_json(json_str)
+        assert restored.ops[0] == ("canvas", ("800x600",), {"color": "blue", "as": "bg"})
+        image = restored.materialize()
+        assert image.size == (800, 600)
+
+    def test_canvas_hex_color(self):
+        """Canvas with hex color."""
+        state = PipelineState()
+        state.add_op("canvas", "50x50", color="#2d5016")
+        image = state.materialize()
+        r, g, b, a = image.getpixel((25, 25))
+        assert (r, g, b) == (45, 80, 22)
+
+
+class TestNewOpsCLIHandlers:
+    """Tests for CLI handlers of new operations."""
+
+    def test_cmd_trim_basic(self):
+        from chop.cli import cmd_trim
+        args = mock.Mock(on=None, fuzz=0)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_trim(args)
+        assert state.ops[0] == ("trim", (), {})
+
+    def test_cmd_trim_with_fuzz(self):
+        from chop.cli import cmd_trim
+        args = mock.Mock(on=None, fuzz=10)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_trim(args)
+        assert state.ops[0] == ("trim", (), {"fuzz": 10})
+
+    def test_cmd_colorize_basic(self):
+        from chop.cli import cmd_colorize
+        args = mock.Mock(color="red", strength=1.0, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_colorize(args)
+        assert state.ops[0] == ("colorize", ("red",), {})
+
+    def test_cmd_colorize_with_strength(self):
+        from chop.cli import cmd_colorize
+        args = mock.Mock(color="#704214", strength=0.5, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_colorize(args)
+        assert state.ops[0] == ("colorize", ("#704214",), {"strength": 0.5})
+
+    def test_cmd_opacity(self):
+        from chop.cli import cmd_opacity
+        args = mock.Mock(factor=0.5, on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_opacity(args)
+        assert state.ops[0] == ("opacity", (0.5,), {})
+
+    def test_cmd_background(self):
+        from chop.cli import cmd_background
+        args = mock.Mock(color="white", on=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_background(args)
+        assert state.ops[0] == ("background", ("white",), {})
+
+    def test_cmd_mask_circle(self):
+        from chop.cli import cmd_mask
+        args = mock.Mock(shape="circle", radius=0, on=None, invert=False)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_mask(args)
+        assert state.ops[0] == ("mask", ("circle",), {})
+
+    def test_cmd_mask_roundrect_with_radius(self):
+        from chop.cli import cmd_mask
+        args = mock.Mock(shape="roundrect", radius=20, on=None, invert=False)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_mask(args)
+        assert state.ops[0] == ("mask", ("roundrect",), {"radius": 20})
+
+    def test_cmd_mask_invert(self):
+        from chop.cli import cmd_mask
+        args = mock.Mock(shape="circle", radius=0, on=None, invert=True)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_mask(args)
+        assert state.ops[0] == ("mask", ("circle",), {"invert": True})
+
+    def test_cmd_canvas_basic(self):
+        from chop.cli import cmd_canvas
+        args = mock.Mock(size="800x600", color="transparent", label=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_canvas(args)
+        assert state.ops[0] == ("canvas", ("800x600",), {})
+
+    def test_cmd_canvas_with_color_and_label(self):
+        from chop.cli import cmd_canvas
+        args = mock.Mock(size="800x600", color="white", label="bg")
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_canvas(args)
+        assert state.ops[0] == ("canvas", ("800x600",), {"color": "white", "as": "bg"})
+
+    def test_cmd_hstack_with_gap(self):
+        from chop.cli import cmd_hstack
+        args = mock.Mock(images=["a", "b"], align="center", gap=10, gap_color="white", label=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_hstack(args)
+        assert state.ops[0] == ("hstack", ("a", "b"), {"align": "center", "gap": 10, "gap_color": "white"})
+
+    def test_cmd_vstack_with_gap(self):
+        from chop.cli import cmd_vstack
+        args = mock.Mock(images=[], align="center", gap=5, gap_color="transparent", label=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_vstack(args)
+        assert state.ops[0] == ("vstack", (), {"align": "center", "gap": 5})
+
+    def test_cmd_grid_with_gap(self):
+        from chop.cli import cmd_grid
+        args = mock.Mock(images=[], cols=3, gap=10, gap_color="black", label=None)
+        with mock.patch("chop.cli.read_pipeline_input", return_value=None):
+            state = cmd_grid(args)
+        assert state.ops[0] == ("grid", (), {"cols": 3, "gap": 10, "gap_color": "black"})
+
+
+class TestNewOpsIntegration:
+    """Integration tests combining new operations."""
+
+    def test_mask_then_background(self, test_image_file: str):
+        """Mask + background: circular avatar on white."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("mask", "circle")
+        state.add_op("background", "white")
+        image = state.materialize()
+        assert image.size == (100, 80)
+        # Corner: white background (circle mask made it transparent, then background filled)
+        r, g, b, a = image.getpixel((0, 0))
+        assert (r, g, b, a) == (255, 255, 255, 255)
+
+    def test_canvas_overlay_composition(self, test_image_file: str):
+        """Canvas + load + overlay composition."""
+        state = PipelineState()
+        state.add_op("canvas", "200x200", color="white", **{"as": "bg"})
+        state.add_op("load", test_image_file, **{"as": "fg"})
+        state.add_op("resize", "50%", on="fg")
+        state.add_op("overlay", "bg", "fg", x=50, y=60)
+        image = state.materialize()
+        assert image.size == (200, 200)
+
+    def test_colorize_sepia_workflow(self, test_image_file: str):
+        """Full sepia workflow: grayscale → colorize."""
+        state = PipelineState()
+        state.add_op("load", test_image_file)
+        state.add_op("grayscale")
+        state.add_op("colorize", "#704214")
+        state.add_op("resize", "50%")
+        image = state.materialize()
+        assert image.size == (50, 40)
+
+    def test_hstack_with_gap_and_pad(self, test_image_file: str, second_image_file: str):
+        """Hstack with gap, then pad result."""
+        state = PipelineState()
+        state.add_op("load", test_image_file, **{"as": "a"})
+        state.add_op("load", second_image_file, **{"as": "b"})
+        state.add_op("hstack", "a", "b", gap=10, gap_color="white")
+        state.add_op("pad", 5, color="black")
+        image = state.materialize()
+        # (100+10+50) x 80 = 160x80, then +5 pad on all sides = 170x90
+        assert image.size == (170, 90)

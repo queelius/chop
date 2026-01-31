@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "chop"
+abstract: "A Unix-philosophy image manipulation CLI with lazy evaluation, JSON piping, and multi-image composition."
+version: "0.5.0"
+license: MIT
+date-released: "2025-01-31"
+repository-code: "https://github.com/spinoza/chop"
+keywords:
+  - image-processing
+  - command-line
+  - unix-philosophy
+  - json-pipeline
+  - lazy-evaluation
+  - composition
+authors:
+  - family-names: "Towell"
+    given-names: "Alexander"
+    email: "queelius@gmail.com"
+    orcid: "https://orcid.org/0000-0001-6443-9897"
+    affiliation: "Southern Illinois University Edwardsville"
+    alias: "Alex Towell"
