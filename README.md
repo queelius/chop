@@ -78,7 +78,7 @@ pip install chop
 Development:
 
 ```bash
-git clone https://github.com/spinoza/chop.git
+git clone https://github.com/queelius/chop.git
 cd chop
 pip install -e .
 ```

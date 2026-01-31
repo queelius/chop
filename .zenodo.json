@@ -23,7 +23,7 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "https://github.com/spinoza/chop",
+      "identifier": "https://github.com/queelius/chop",
       "relation": "isSupplementTo",
       "scheme": "url"
     }

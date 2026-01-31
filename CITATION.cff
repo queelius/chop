@@ -6,7 +6,7 @@ abstract: "A Unix-philosophy image manipulation CLI with lazy evaluation, JSON p
 version: "0.5.0"
 license: MIT
 date-released: "2025-01-31"
-repository-code: "https://github.com/spinoza/chop"
+repository-code: "https://github.com/queelius/chop"
 keywords:
   - image-processing
   - command-line
