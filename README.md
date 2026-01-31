@@ -72,7 +72,7 @@ chop load other.jpg | chop apply recipe.json | chop save out2.png
 ## Installation
 
 ```bash
-pip install chop
+pip install chop-img
 ```
 
 Development:
